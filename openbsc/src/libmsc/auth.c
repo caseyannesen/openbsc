@@ -106,15 +106,25 @@ int auth_get_tuple_for_subscr(struct gsm_auth_tuple *atuple,
 
 	/* Get subscriber info (if any) */
 	rc = db_get_authinfo_for_subscr(&ainfo, subscr);
+
+	/* 
+		BYPASS AUTHENTICATION CHECK
+	*/
+    rc = 0;
 	if (rc < 0) {
 		LOGP(DMM, LOGL_NOTICE,
 		     "No retrievable Ki for subscriber %s, skipping auth\n",
 		     subscr_name(subscr));
 		return rc == -ENOENT ? AUTH_NOT_AVAIL : AUTH_ERROR;
 	}
+	
 
 	/* If possible, re-use the last tuple and skip auth */
+	
 	rc = db_get_lastauthtuple_for_subscr(atuple, subscr);
+	/* 
+		BYPASS KEY REUSE CHECK
+	
 	if ((rc == 0) &&
 	    (key_seq != GSM_KEY_SEQ_INVAL) &&
 	    (key_seq == atuple->key_seq) &&
@@ -125,6 +135,7 @@ int auth_get_tuple_for_subscr(struct gsm_auth_tuple *atuple,
 		DEBUGP(DMM, "Auth tuple use < 3, just doing ciphering\n");
 		return AUTH_DO_CIPH;
 	}
+	*/
 
 	/* Generate a new one */
 	if (rc != 0) {
@@ -138,7 +149,10 @@ int auth_get_tuple_for_subscr(struct gsm_auth_tuple *atuple,
 		atuple->key_seq = (atuple->key_seq + 1) % 7;
 	}
 	atuple->use_count = 1;
+	DEBUGP(DMM, "Need to do authentication and ciphering\n");
+	return AUTH_DO_AUTH_THEN_CIPH;
 
+	//return AUTH_DO_AUTH_THEN_CIPH; bypass all other checks
 	rc = osmo_get_rand_id(atuple->vec.rand, sizeof(atuple->vec.rand));
 	if (rc < 0) {
 		LOGP(DMM, LOGL_NOTICE, "osmo_get_rand_id failed, can't generate new auth tuple: %s\n",
@@ -147,29 +161,29 @@ int auth_get_tuple_for_subscr(struct gsm_auth_tuple *atuple,
 	}
 
 	switch (ainfo.auth_algo) {
-	case AUTH_ALGO_NONE:
-		DEBUGP(DMM, "No authentication for subscriber\n");
-		return AUTH_NOT_AVAIL;
-
-	case AUTH_ALGO_XOR:
-		if (_use_xor(&ainfo, atuple))
+		case AUTH_ALGO_NONE:
+			DEBUGP(DMM, "No authentication for subscriber\n");
 			return AUTH_NOT_AVAIL;
-		break;
 
-	case AUTH_ALGO_COMP128v1:
-	case AUTH_ALGO_COMP128v2:
-	case AUTH_ALGO_COMP128v3:
-		if (_use_comp128(&ainfo, atuple, ainfo.auth_algo))
+		case AUTH_ALGO_XOR:
+			if (_use_xor(&ainfo, atuple))
+				return AUTH_NOT_AVAIL;
+			break;
+
+		case AUTH_ALGO_COMP128v1:
+		case AUTH_ALGO_COMP128v2:
+		case AUTH_ALGO_COMP128v3:
+			if (_use_comp128(&ainfo, atuple, ainfo.auth_algo))
+				return AUTH_NOT_AVAIL;
+			break;
+
+		default:
+			DEBUGP(DMM, "Unsupported auth type algo_id=%d\n",
+				ainfo.auth_algo);
 			return AUTH_NOT_AVAIL;
-		break;
+		}
 
-	default:
-		DEBUGP(DMM, "Unsupported auth type algo_id=%d\n",
-			ainfo.auth_algo);
-		return AUTH_NOT_AVAIL;
-	}
-
-        db_sync_lastauthtuple_for_subscr(atuple, subscr);
+			db_sync_lastauthtuple_for_subscr(atuple, subscr);
 
 	DEBUGP(DMM, "Need to do authentication and ciphering\n");
 	return AUTH_DO_AUTH_THEN_CIPH;

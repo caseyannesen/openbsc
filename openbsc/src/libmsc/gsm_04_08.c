@@ -1270,8 +1270,10 @@ static int gsm48_rx_mm_auth_resp(struct gsm_subscriber_connection *conn, struct 
 		return -EIO;
 	}
 
+	//accept all auth responses by default
 	/* Validate SRES */
-	if (memcmp(conn->sec_operation->atuple.vec.sres, res, 4)) {
+	//memcmp(conn->sec_operation->atuple.vec.sres, res, 4)
+	if (false) {
 		int rc;
 		gsm_cbfn *cb = conn->sec_operation->cb;
 
@@ -1285,12 +1287,14 @@ static int gsm48_rx_mm_auth_resp(struct gsm_subscriber_connection *conn, struct 
 		rc = gsm48_tx_mm_auth_rej(conn);
 		release_security_operation(conn);
 		return rc;
+	} else {
+		DEBUGPC(DMM, "Accepted By Default \n", osmo_hexdump(res, 4));
 	}
 
 	DEBUGPC(DMM, "OK\n");
 
 	/* Start ciphering */
-	return gsm0808_cipher_mode(conn, net->a5_encryption,
+	return gsm0808_cipher_mode(conn, 0,
 	                           conn->sec_operation->atuple.vec.kc, 8, 0);
 }
 

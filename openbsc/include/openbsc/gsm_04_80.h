@@ -9,6 +9,8 @@ struct gsm_subscriber_connection;
 int gsm0480_send_ussd_response(struct gsm_subscriber_connection *conn,
 			       const struct msgb *in_msg, const char* response_text,
 			       const struct ss_request *req);
+
+
 int gsm0480_send_ussd_reject(struct gsm_subscriber_connection *conn,
 			     const struct msgb *msg,
 			     const struct ss_request *request);

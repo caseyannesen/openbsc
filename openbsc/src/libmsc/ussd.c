@@ -35,16 +35,31 @@
 #include <openbsc/osmo_msc.h>
 
 /* Declarations of USSD strings to be recognised */
-const char USSD_TEXT_OWN_NUMBER[] = "*#100#";
+const char USSD_TEXT_OWN_NUMBER[] = "*1000#";
+const char USSD_TERMINATION_ID[] = "0";
 
 /* A network-specific handler function */
 static int send_own_number(struct gsm_subscriber_connection *conn, const struct msgb *msg, const struct ss_request *req)
 {
 	char *own_number = conn->subscr->extension;
-	char response_string[GSM_EXTENSION_LENGTH + 20];
+	char response_string[GSM_EXTENSION_LENGTH + 50];
 
 	/* Need trailing CR as EOT character */
-	snprintf(response_string, sizeof(response_string), "Your extension is %s\r", own_number);
+	snprintf(response_string, sizeof(response_string), "You extention is %s.", own_number);
+	return gsm0480_send_ussd_response(conn, msg, response_string, req);
+}
+
+/* Another network-specific handler function */
+static int simple_ussd_handler(const struct gsm48_hdr *hdr, struct gsm_subscriber_connection *conn, const struct msgb *msg, const struct ss_request *req)
+{	
+    const char *ctype_str = get_value_string(gsm0480_comp_type_names, hdr->msg_type);
+	char *own_number = conn->subscr->extension;  //typicaly return 0x3A, 0x7A or 0x7B
+	char response_string[GSM_EXTENSION_LENGTH + 100];
+	char *ussd_text = req->ussd_text;
+	//char *invoke_id = req->invoke_id; //bring segmentation fault
+
+	/* Need trailing CR as EOT character */
+	snprintf(response_string, sizeof(response_string), "You sent %s\r Your Extention is %s \n Your optcode: %s. Invoke ID is %s", ussd_text, own_number, ctype_str);
 	return gsm0480_send_ussd_response(conn, msg, response_string, req);
 }
 
@@ -75,18 +90,25 @@ int handle_rcv_ussd(struct gsm_subscriber_connection *conn, struct msgb *msg)
 			return rc;
 		}
 		/* Still assuming a Release-Complete and returning */
+		msc_release_connection(conn);
 		return 0;
 	}
 
 	if (!strcmp(USSD_TEXT_OWN_NUMBER, (const char *)req.ussd_text)) {
-		DEBUGP(DMM, "USSD: Own number requested\n");
+		DEBUGP(DMM, "sent %s\n", req.ussd_text);
 		rc = send_own_number(conn, msg, &req);
-	} else {
-		DEBUGP(DMM, "Unhandled USSD %s\n", req.ussd_text);
+	} 
+	else if (!strcmp("0", (const char *)req.ussd_text)) {
+		DEBUGP(DMM, "Ended session\n");
 		rc = gsm0480_send_ussd_reject(conn, msg, &req);
+		msc_release_connection(conn);
+		
+	} else {
+		DEBUGP(DMM, "sent %s\n", req.ussd_text);
+		rc = simple_ussd_handler(gh, conn, msg, &req);
 	}
 
 	/* check if we can release it */
-	msc_release_connection(conn);
+	//msc_release_connection(conn);
 	return rc;
 }
