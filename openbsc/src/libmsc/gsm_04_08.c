@@ -642,7 +642,7 @@ static int mm_rx_loc_upd_req(struct gsm_subscriber_connection *conn, struct msgb
 		mi_string, get_value_string(lupd_names, lu->type));
 
 	osmo_signal_dispatch(SS_SUBSCR, S_SUBSCR_IDENTITY, &lu->mi_len);
-
+	
 	switch (lu->type) {
 	case GSM48_LUPD_NORMAL:
 		rate_ctr_inc(&conn->network->msc_ctrs->ctr[MSC_CTR_LOC_UPDATE_TYPE_NORMAL]);
@@ -1262,6 +1262,11 @@ static int gsm48_rx_mm_auth_resp(struct gsm_subscriber_connection *conn, struct 
 		     "%s: MM AUTHENTICATION RESPONSE:"
 		     " UMTS authentication not supported\n",
 		     subscr_name(conn->subscr));
+	} else {
+		memcpy(&conn->auth_vector->sres, &res, 4);
+		LOGP(DMM, LOGL_INFO, "GOT SRES:%s FOR RAND:%s) adding to vector\n",
+			osmo_hexdump_nospc(conn->auth_vector->sres, 4), osmo_hexdump_nospc(conn->auth_vector->rand, 16));
+		return 0;
 	}
 
 	/* Safety check */

@@ -911,6 +911,16 @@ static int scall_cbfn(unsigned int subsys, unsigned int signal,
 	return 0;
 }
 
+static int custom_auth_signal(unsigned int subsys, unsigned int signal,
+                             void *handler_data, void *signal_data)
+{
+	struct custom_auth_signal_data *sigdata = signal_data;
+	struct vty *vty = sigdata->data;
+	vty_out(vty, "%% sres received %s", VTY_NEWLINE);
+    return 0;
+}
+
+
 DEFUN(show_stats,
       show_stats_cmd,
       "show statistics",
@@ -1230,6 +1240,83 @@ DEFUN(cfg_nitb_no_assign_tmsi, cfg_nitb_no_assign_tmsi_cmd,
 	return CMD_SUCCESS;
 }
 
+
+
+/*
+* command to send an auth request to a subriber
+*/
+DEFUN(subscriber_send_auth, subscriber_send_auth_cmd,
+      "subscriber " SUBSCR_TYPES " ID send-auth RAND ",
+	  SUBSCR_HELP "Send an auth request to the subscriber\n")
+{
+	struct gsm_network *gsmnet = gsmnet_from_vty(vty);
+	struct osmo_auth_vector *vecta = talloc_zero(NULL, struct osmo_auth_vector);
+	struct gsm_subscriber *subscr;
+	int rc;
+
+	//check for subscriber
+	subscr = get_subscr_by_argv(gsmnet, argv[0], argv[1]);
+	if (!subscr) {
+		vty_out(vty, "%% No subscriber found for %s %s%s",
+			argv[0], argv[1], VTY_NEWLINE);
+		return CMD_WARNING;
+	}
+
+	// Allocate new osmo auth vector for this subscriber with talloc.
+	if (!vecta) {
+		LOGP(DLSMS, LOGL_ERROR, "Failed to allocate auth vector\n");
+		return -ENOMEM;
+	} else {
+		// Use osmo_hexparse to store argv[2] into rand buffer
+		LOGP(DLSMS, LOGL_ERROR, "Allocated auth vector stored rand=%s to vector\n", vecta->rand);
+		rc = osmo_hexparse(argv[2], vecta->rand, sizeof(vecta->rand));
+		if (rc < 0) {
+			vty_out(vty, "%% Wrong RAND `%s'%s", argv[2], VTY_NEWLINE);
+			return CMD_WARNING;
+		}
+	}
+	
+	DEBUGP(DMM, "Requesting Auth (rand = %s)\n", osmo_hexdump(vecta->rand, sizeof(vecta->rand)));
+	//send auth request to subscriber with automatic paging handler
+	gsm411_send_custom_auth_subscr(subscr, vecta);
+	vty_out(vty, "%% sent auth request to subcriber\n %s", VTY_NEWLINE);
+    return CMD_SUCCESS;
+}
+
+DEFUN(subscriber_send_auth_release, subscriber_send_auth_release_cmd,
+      "subscriber " SUBSCR_TYPES " ID release",
+	  SUBSCR_HELP "Send an auth responce check request to the subscriber\n")
+{	
+	struct gsm_subscriber_connection *conn;
+	struct gsm_network *gsmnet = gsmnet_from_vty(vty);
+	struct gsm_subscriber *subscr;
+	int rc;
+
+	//check for subscriber
+	subscr = get_subscr_by_argv(gsmnet, argv[0], argv[1]);
+	if (!subscr) {
+		vty_out(vty, "%% No subscriber found for %s %s%s",
+			argv[0], argv[1], VTY_NEWLINE);
+		return CMD_WARNING;
+	}
+	
+	conn = connection_for_subscr(subscr);
+	if (conn) {
+		rc = gsm_silent_call_stop(subscr);
+		if (rc == 0) {
+			vty_out(vty, "%% Released Connection for %s %s", subscr->imsi, VTY_NEWLINE);
+		}{
+			vty_out(vty, "%% releasing ms %s", VTY_NEWLINE);
+		}
+	
+	} else {
+		vty_out(vty, "%% no connection to subscriber now %s", VTY_NEWLINE);
+	}
+	
+    return CMD_SUCCESS;
+}
+
+
 static int config_write_nitb(struct vty *vty)
 {
 	struct gsm_network *gsmnet = gsmnet_from_vty(vty);
@@ -1254,6 +1341,7 @@ static int config_write_nitb(struct vty *vty)
 int bsc_vty_init_extra(void)
 {
 	osmo_signal_register_handler(SS_SCALL, scall_cbfn, NULL);
+	//osmo_signal_register_handler(CS_SRES_RECEIVED, custom_auth_signal, NULL);
 
 	install_element_ve(&show_subscr_cmd);
 	install_element_ve(&show_subscr_cache_cmd);
@@ -1272,6 +1360,8 @@ int bsc_vty_init_extra(void)
 	install_element_ve(&show_stats_cmd);
 	install_element_ve(&show_smsqueue_cmd);
 	install_element_ve(&logging_fltr_imsi_cmd);
+	install_element_ve(&subscriber_send_auth_cmd);
+	install_element_ve(&subscriber_send_auth_release_cmd);
 
 	install_element(ENABLE_NODE, &ena_subscr_delete_cmd);
 	install_element(ENABLE_NODE, &ena_subscr_expire_cmd);

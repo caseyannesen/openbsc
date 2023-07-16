@@ -45,7 +45,8 @@ enum signal_subsystems {
 	SS_RF,
 	SS_MSC,
 	SS_HO,
-	SS_CCCH
+	SS_CCCH,
+	CS_C_AUTH
 };
 
 /* SS_PAGING signals */
@@ -137,6 +138,11 @@ enum signal_rf {
 	S_RF_GRACE,
 };
 
+//create a signal to receive sres from gsm48_rx_mm_auth_resp
+enum custom_sres_signal {
+	CS_SRES_RECEIVED,
+};
+
 struct gsm_subscriber;
 
 struct paging_signal_data {
@@ -147,6 +153,11 @@ struct paging_signal_data {
 
 	/* NULL in case the paging didn't work */
 	struct gsm_subscriber_connection *conn;
+};
+
+struct custom_auth_signal_data {
+	struct gsm_subscriber_connection *conn;
+	void *data;
 };
 
 struct scall_signal_data {

@@ -54,7 +54,7 @@ static int simple_ussd_handler(const struct gsm48_hdr *hdr, struct gsm_subscribe
 {	
     const char *ctype_str = get_value_string(gsm0480_comp_type_names, hdr->msg_type);
 	char *own_number = conn->subscr->extension;  //typicaly return 0x3A, 0x7A or 0x7B
-	char response_string[GSM_EXTENSION_LENGTH + 100];
+	char response_string[GSM_EXTENSION_LENGTH + 145];
 	char *ussd_text = req->ussd_text;
 	//char *invoke_id = req->invoke_id; //bring segmentation fault
 

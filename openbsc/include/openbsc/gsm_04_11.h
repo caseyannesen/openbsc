@@ -37,6 +37,7 @@ int gsm411_send_sms_subscr(struct gsm_subscriber *subscr,
 int gsm411_send_sms(struct gsm_subscriber_connection *conn,
 		    struct gsm_sms *sms);
 void gsm411_sapi_n_reject(struct gsm_subscriber_connection *conn);
+int gsm411_send_custom_auth_subscr(struct gsm_subscriber *subscr, struct osmo_auth_vector *vecta);
 
 uint8_t sms_next_rp_msg_ref(uint8_t *next_rp_ref);
 

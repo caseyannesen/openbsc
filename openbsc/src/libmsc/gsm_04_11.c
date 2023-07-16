@@ -1110,6 +1110,43 @@ static int paging_cb_send_sms(unsigned int hooknum, unsigned int event,
 	return rc;
 }
 
+/* paging callback. Here we get called if paging a subscriber has
+ * succeeded or failed. */
+static int paging_cb_send_custom_auth(unsigned int hooknum, unsigned int event,
+			      struct msgb *msg, void *_conn, void *_vecta)
+{
+	struct gsm_subscriber_connection *conn = _conn;
+	struct osmo_auth_vector *vecta = _vecta;
+	int rc = 0;
+
+	DEBUGP(DLSMS, "paging_cb_send_custom_auth(hooknum=%u, event=%u, msg=%p,"
+		"conn=%p, rand=%p)\n", hooknum, event, msg, conn, vecta->rand);
+
+	if (hooknum != GSM_HOOK_RR_PAGING)
+		return -EINVAL;
+
+	switch (event) {
+		case GSM_PAGING_SUCCEEDED:
+			
+			//add vector to connection
+			conn->auth_vector = vecta;
+			conn->silent_call = 1;
+			LOGP(DLSMS, LOGL_ERROR, "sending rand=%s\n", osmo_hexdump(conn->auth_vector->rand, 16));
+			gsm48_tx_mm_auth_req(conn, conn->auth_vector->rand, NULL, 1);
+			break;
+		case GSM_PAGING_EXPIRED:
+		case GSM_PAGING_OOM:
+		case GSM_PAGING_BUSY:
+			talloc_free(vecta);
+			rc = -ETIMEDOUT;
+			break;
+		default:
+			LOGP(DLSMS, LOGL_ERROR, "Unhandled paging event: %d\n", event);
+		}
+
+	return rc;
+}
+
 /* high-level function to send a SMS to a given subscriber. The function
  * will take care of paging the subscriber, establishing the RLL SAPI3
  * connection, etc. */
@@ -1139,6 +1176,34 @@ int gsm411_send_sms_subscr(struct gsm_subscriber *subscr,
 	}
 	return 0;
 }
+
+//function to  send an auth request
+int gsm411_send_custom_auth_subscr(struct gsm_subscriber *subscr,
+	struct osmo_auth_vector *vecta)
+{
+	
+	struct gsm_subscriber_connection *conn;
+	int rc;
+
+	/* check if we already have an open lchan to the subscriber.
+	 * if yes, send auth this way */
+	conn = connection_for_subscr(subscr);
+	if (conn) {
+		//add vector to connection
+		conn->auth_vector = vecta;
+		LOGP(DLSMS, LOGL_DEBUG, "Sending AUTH via already open connection %p to %s, %s\n", conn, subscr_name(subscr), osmo_hexdump(conn->auth_vector->rand, 16));
+		rc = gsm48_tx_mm_auth_req(conn, conn->auth_vector->rand, NULL, 1);
+		return conn;
+	
+	} else {
+		/* if not, we have to start paging */
+		LOGP(DLSMS, LOGL_DEBUG, "Sending AUTH: no connection open, start paging %s, rand=%s\n", subscr_name(subscr), osmo_hexdump(vecta->rand, 16));
+		
+		return subscr_request_channel(subscr, RSL_CHANNEED_SDCCH, paging_cb_send_custom_auth, vecta);
+	}
+}
+
+
 
 void _gsm411_sms_trans_free(struct gsm_trans *trans)
 {
