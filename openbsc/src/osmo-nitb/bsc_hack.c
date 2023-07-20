@@ -168,7 +168,7 @@ static void handle_options(int argc, char **argv)
 			create_pcap_file(optarg);
 			break;
 		case 'T':
-			log_set_print_timestamp(osmo_stderr_target, 1);
+			log_set_print_extended_timestamp(osmo_stderr_target, 1);
 			break;
 		case 'P':
 			ipacc_rtp_direct = 0;
