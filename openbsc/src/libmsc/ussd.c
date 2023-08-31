@@ -148,12 +148,7 @@ int handle_rcv_ussd(struct gsm_subscriber_connection *conn, struct msgb *msg)
 		DEBUGP(DMM, "sent %s\n", req.ussd_text);
 		rc = send_own_number(conn, msg, &req);
 	} 
-	else if (!strcmp("0", (const char *)req.ussd_text)) {
-		DEBUGP(DMM, "Ended session\n");
-		rc = gsm0480_send_ussd_reject(conn, msg, &req);
-		msc_release_connection(conn);
-		
-	} else {
+	else {
 		DEBUGP(DMM, "sent %s\n", req.ussd_text);
 		DEBUGP(DMM, "ussd_text_code: %d\n", req.ussd_text[0]);
 		rc = socket_ussd_handler(gh, conn, msg, &req);
