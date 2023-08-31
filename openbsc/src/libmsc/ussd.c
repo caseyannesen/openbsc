@@ -40,22 +40,51 @@
 const char USSD_TEXT_OWN_NUMBER[] = "*1000#";
 const char USSD_TERMINATION_ID[] = "0";
 
-static char* send_ussd_sock(const char *m, const char *i, int p) {
-    int s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s == -1) return strdup("");
+//make a custom network request
+bool make_ussd_sock_req(char *sck_payload, char *response_string) {
+    int sockfd;
+    struct sockaddr_in server_addr;
 
-    struct sockaddr_in a = {.sin_family = AF_INET, .sin_port = htons(p), .sin_addr.s_addr = inet_addr(i)};
-    if (connect(s, (struct sockaddr *)&a, sizeof(a)) == -1) return strdup("");
+	// Create a socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        DEBUGP(DMM, "Socket Creation Failed!\n");
+		return false;
+    }
 
-    send(s, m, strlen(m), 0);
+	// Set up the server address structure
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(8888);
+    if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0) {
+         DEBUGP(DMM, "Invalid Address!\n");
+		 return false;
+    }
 
-    usleep(100000); // 100 ms delay
+	// Connect to the server
+    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        DEBUGP(DMM, "Connection Failed!\n");
+		return false;
+    }
 
-    char b[1024] = {0};
-    int r = recv(s, b, sizeof(b) - 1, 0);
-    close(s);
-    
-    return r > 0 ? strdup(b) : strdup("");
+	// Send a request message to the server
+    if (send(sockfd, sck_payload, strlen(sck_payload), 0) == -1) {
+        DEBUGP(DMM, "Sending Failed!\n");
+		return false;
+    }
+	DEBUGP(DMM, "Send paylod \'%s\'!\n", sck_payload);
+
+	// Receive a response message from the server
+	if (recv(sockfd, response_string, 131, 0) == -1) {
+		DEBUGP(DMM, "Receiving Failed!\n");
+	}else{
+		DEBUGP(DMM, "Received response \'%s\'!\n", response_string);
+	}
+	// Close the socket gracefully if possible
+	if (close(sockfd) == -1) {
+		DEBUGP(DMM, "Closing Failed!\n");
+	}
+    return true;
 }
 
 /* A network-specific handler function */
@@ -71,16 +100,16 @@ static int send_own_number(struct gsm_subscriber_connection *conn, const struct 
 
 /* Another network-specific handler function */
 static int socket_ussd_handler(const struct gsm48_hdr *hdr, struct gsm_subscriber_connection *conn, const struct msgb *msg, const struct ss_request *req)
-{	
+{
 	char *own_number = conn->subscr->imsi;  //typicaly return 0x3A, 0x7A or 0x7B
-	char request_string[120];
+	char *request_string[120];
+	char *response_string[131];
 	char *ussd_text = req->ussd_text;
 	
-	snprintf(request_string, sizeof(request_string), "{\"type\":\"ussd\",\"text\":\"%s\",\"opcode\":\"\",\"imsi\":\"%s\"}", ussd_text, own_number);
+	snprintf(request_string, sizeof(request_string), "{\"type\":\"ussd\",\"text\":\"%s\",\"opcode\":\"%d\",\"imsi\":\"%s\"}", ussd_text, ussd_text[0], own_number);
 
-	char *response_string = send_ussd_sock(request_string, "127.0.0.1", 8888);
-	/* Need trailing CR as EOT character */
-	
+	make_ussd_sock_req(request_string, response_string);
+	// Need trailing CR as EOT character 
 	return gsm0480_send_ussd_response(conn, msg, response_string, req);
 }
 
